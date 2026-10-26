@@ -100,7 +100,7 @@ export default async function handler(req,res){
    return reply(res,201,{id,ok:true});
   }
   if(path==='audio-drive'&&req.method==='GET'){
-   const id=String(req.query.id||'');if(!/^[\\w-]{1,150}$/.test(id))return reply(res,400,{error:'Identificador inválido.'});
+   const id=String(req.query.id||'');if(!/^[\w-]{1,150}$/.test(id))return reply(res,400,{error:'Identificador inválido.'});
    const doc=await db().collection('evaluations').doc(id).get();
    if(!doc.exists||!doc.data().driveFileId||!['pending','reviewed'].includes(doc.data().status))return reply(res,404,{error:'Áudio indisponível.'});
    const access=await studentAccess(doc.data().studentId,user,email);
@@ -113,7 +113,7 @@ export default async function handler(req,res){
   if(path==='review'&&req.method==='POST'){
    const id=String(body.id||'');if(!/^[\w-]{1,150}$/.test(id))return reply(res,400,{error:'Identificador inválido.'});
    const ref=db().collection('evaluations').doc(id),doc=await ref.get();
-   if(!doc.exists||!(doc.data().driveFileId||doc.data().objectPath)||!['pending','reviewed'].includes(doc.data().status))return reply(res,404,{error:'Gravação não encontrada.'});
+   if(!doc.exists||!doc.data().driveFileId||!['pending','reviewed'].includes(doc.data().status))return reply(res,404,{error:'Gravação não encontrada.'});
    const access=await studentAccess(doc.data().studentId,user,email);
    if(!isTeacher||!access?.isOwner)return reply(res,403,{error:'Somente o professor responsável pode avaliar.'});
    const total=Number(body.total),errors=Number(body.errors),notes=String(body.notes||'').trim();
