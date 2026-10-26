@@ -54,7 +54,7 @@ async function listen(id,button){
 }
 async function review(id){
  const total=Number($('total-'+id).value),errors=Number($('errors-'+id).value),notes=$('notes-'+id).value;
- try{await api('review','POST',{id,total,errors,notes});toast('Avaliação salva.');await history()}catch(e){toast(e.message}
+ try{await api('review','POST',{id,total,errors,notes});toast('Avaliação salva.');await history()}catch(e){toast(e.message)}
 }
 
 if(!cfg||String(cfg.apiKey).startsWith('SUBSTITUA')){$('configWarning').classList.remove('hidden');$('auth').classList.add('hidden')}else{
