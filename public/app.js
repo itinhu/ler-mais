@@ -16,12 +16,12 @@ async function history(){
   $('totalReadings').textContent=reviewed.length;
   $('averagePcpm').textContent=reviewed.length?(reviewed.reduce((a,x)=>a+Number(x.pcpm||0),0)/reviewed.length).toFixed(1):'—';
   $('history').innerHTML=evaluations.map(e=>{
-   const reviewed=e.status==='reviewed',pending=e.status==='pending',old=!e.objectPath;
+   const reviewed=e.status==='reviewed',pending=e.status==='pending',old=!e.driveFileId&&!e.objectPath;
    if(e.status==='uploading')return '';
    const status=reviewed?'Avaliada':pending?'Aguardando avaliação':'Avaliação antiga';
    const details=reviewed||old?'<p>'+Number(e.pcpm||0).toFixed(1)+' PCPM · '+Number(e.accuracy||0)+'% de precisão</p>':'';
-   const play=e.objectPath?'<button type="button" class="outline listen" data-id="'+escapeHTML(e.id)+'">▶ Ouvir áudio</button>':'';
-   const form=role==='teacher'&&e.objectPath?'<div class="review"><label>Palavras lidas<input type="number" min="0" max="500" id="total-'+escapeHTML(e.id)+'" value="'+(e.total??'')+'"></label><label>Erros<input type="number" min="0" max="500" id="errors-'+escapeHTML(e.id)+'" value="'+(e.errors??0)+'"></label><label>Observações<textarea id="notes-'+escapeHTML(e.id)+'" maxlength="2000">'+escapeHTML(e.notes||'')+'</textarea></label><button type="button" class="save-review" data-id="'+escapeHTML(e.id)+'">Salvar avaliação</button></div>':'';
+   const play=e.driveFileId?'<button type="button" class="outline listen" data-id="'+escapeHTML(e.id)+'">▶ Ouvir áudio</button>':'';
+   const form=role==='teacher'&&e.driveFileId?'<div class="review"><label>Palavras lidas<input type="number" min="0" max="500" id="total-'+escapeHTML(e.id)+'" value="'+(e.total??'')+'"></label><label>Erros<input type="number" min="0" max="500" id="errors-'+escapeHTML(e.id)+'" value="'+(e.errors??0)+'"></label><label>Observações<textarea id="notes-'+escapeHTML(e.id)+'" maxlength="2000">'+escapeHTML(e.notes||'')+'</textarea></label><button type="button" class="save-review" data-id="'+escapeHTML(e.id)+'">Salvar avaliação</button></div>':'';
    return '<article><strong>'+escapeHTML(e.activity||'Leitura')+'</strong> · '+status+'<small>'+escapeHTML(e.createdAt?new Date(e.createdAt).toLocaleDateString('pt-BR'):'Data indisponível')+' · '+(e.source==='home'?'Em casa':'Na escola')+'</small>'+details+play+form+'</article>'
   }).join('')||'<p>Nenhuma gravação até o momento.</p>';
   $('history').querySelectorAll('.listen').forEach(b=>b.onclick=()=>listen(b.dataset.id,b));
@@ -36,22 +36,30 @@ function stop(){clearInterval(tick);elapsed=Math.min(60,Math.max(1,(Date.now()-s
 async function sendRecording(){
  if(!recording)return toast('Grave a leitura primeiro.');
  const studentId=$('readingStudent').value,activity=$('activity').value;
- $('analyze').disabled=true;$('result').textContent='Enviando gravação com segurança...';
+ $('analyze').disabled=true;$('result').textContent='Enviando gravação ao Google Drive...';
  try{
-  const mime=recording.type.split(';')[0];
-  const ticket=await api('upload-url','POST',{studentId,activity,elapsed,mime,size:recording.size});
-  const response=await fetch(ticket.url,{method:'PUT',headers:{'Content-Type':ticket.contentType},body:recording});
-  if(!response.ok)throw Error('Falha no envio ao armazenamento ('+response.status+').');
-  await api('finish-upload','POST',{id:ticket.id});
-  $('result').textContent='Gravação enviada! O professor poderá ouvi-la e avaliar posteriormente.';
+  if(recording.size>2500000)throw Error('Arquivo maior que 2,5 MB. Faça outra gravação.');
+  const b64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=reject;reader.readAsDataURL(recording)});
+  await api('upload-drive','POST',{studentId,activity,elapsed,mime:recording.type.split(';')[0],audioBase64:b64});
+  $('result').textContent='Gravação enviada ao Google Drive. O professor poderá ouvi-la e avaliar.';
   toast('Gravação salva com sucesso.');await historyIfSelected(studentId);
  }catch(e){$('result').textContent='Erro ao enviar: '+e.message}
  finally{$('analyze').disabled=false}
 }
+
 async function historyIfSelected(id){if($('historyStudent').value===id)await history()}
 async function listen(id,button){
- try{button.disabled=true;const data=await api('audio-url?id='+encodeURIComponent(id));const audio=document.createElement('audio');audio.controls=true;audio.src=data.url;button.replaceWith(audio);audio.play().catch(()=>{})}catch(e){toast(e.message);button.disabled=false}
+ try{
+  button.disabled=true;button.textContent='Carregando áudio...';
+  const data=await api('audio-drive?id='+encodeURIComponent(id));
+  const bytes=Uint8Array.from(atob(data.audioBase64),c=>c.charCodeAt(0));
+  const blob=new Blob([bytes],{type:data.mime});
+  const url=URL.createObjectURL(blob);
+  const audio=document.createElement('audio');audio.controls=true;audio.src=url;
+  button.replaceWith(audio);audio.play().catch(()=>{});
+ }catch(e){toast(e.message);button.disabled=false;button.textContent='▶ Ouvir áudio'}
 }
+
 async function review(id){
  const total=Number($('total-'+id).value),errors=Number($('errors-'+id).value),notes=$('notes-'+id).value;
  try{await api('review','POST',{id,total,errors,notes});toast('Avaliação salva.');await history()}catch(e){toast(e.message)}
